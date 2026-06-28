@@ -297,7 +297,7 @@ function drawStreamlines(ctx,proj,grid){
       cur=[cur[0]+(stepKm/(111*coslat))*(uv[0]/sp), cur[1]+(stepKm/111)*(uv[1]/sp)]; }
     if(pa.length>=2) paths.push(pa);
   }
-  const wOf=sp=>1.3+1.9*Math.min(1,sp/30);
+  const wOf=sp=>2.2+2.6*Math.min(1,sp/30);
   // 暗いフチ
   ctx.strokeStyle="rgba(5,16,31,.75)"; ctx.lineCap="round"; ctx.lineJoin="round";
   for(const pa of paths){ ctx.lineWidth=wOf(pa[0].sp)+1.6;
@@ -485,12 +485,14 @@ async function run(){
       reportDt=(await getReportDt(id))||(t.points[0]&&t.points[0].dt)||null; hasTy=t.points.length>0; }
     const ext=computeExtent(t); if(!reportDt) reportDt=new Date();
     st.textContent="風データ（JMAモデル）を取得中…（数十秒かかる場合があります）";
-    let grid=await fetchWindGrid(ext);
-    if(!grid){ st.textContent="風データ取得に失敗→簡易表示で作成します。"; grid=synthWindGrid(ext, hasTy?t.points[0]:null); }
+    let grid=await fetchWindGrid(ext); let realWind=!!grid;
+    if(!grid){ grid=synthWindGrid(ext, hasTy?t.points[0]:null); }
+    let mx=0,sm=0,n2=0; for(let j=0;j<grid.spd.length;j++)for(let i=0;i<grid.spd[j].length;i++){const v=grid.spd[j][i]; if(isFinite(v)){ if(v>mx)mx=v; sm+=v; n2++; }}
+    const av=n2?sm/n2:0;
     const coastline=await coastP;
     draw(t, reportDt, coastline, grid, {hasTy});
-    st.textContent= hasTy ? "台風の状況図を作成しました。「画像を保存（PNG）」で保存できます。"
-                          : "現在の風の状況図を作成しました。「画像を保存（PNG）」で保存できます。";
+    const wtxt = realWind ? `実データ取得：最大${mx.toFixed(0)}・平均${av.toFixed(1)} m/s` : `風データ取得失敗→簡易表示：最大${mx.toFixed(0)} m/s`;
+    st.textContent = (hasTy ? "台風の状況図を作成しました。 " : "現在の風の状況図を作成しました。 ") + wtxt + " ／「画像を保存（PNG）」で保存できます。";
   }catch(e){ st.textContent="取得に失敗しました（通信制限の可能性）。Python版をご利用ください。 "+e.message; }
   finally{ go.disabled=false; }
 }
