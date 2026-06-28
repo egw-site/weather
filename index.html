@@ -213,15 +213,20 @@ function windAt(r,xs,ys){ if(r<=xs[0]) return ys[0];
   for(let i=1;i<xs.length;i++){ if(r<=xs[i]){ const f=(r-xs[i-1])/(xs[i]-xs[i-1]); return ys[i-1]+(ys[i]-ys[i-1])*f; } } return 0; }
 
 // ============ 風グリッド ============
+let LAST_WIND_ERR="";
 async function fetchWindGrid(ext){
+  LAST_WIND_ERR="";
   try{
     const {lons,lats}=gridAxes(ext); const pts=[];
     for(const la of lats) for(const lo of lons) pts.push([la,lo]);
     const results=[];
-    for(let c=0;c<pts.length;c+=100){ const chunk=pts.slice(c,c+100);
+    for(let c=0;c<pts.length;c+=50){ const chunk=pts.slice(c,c+50);
       const la=chunk.map(p=>p[0].toFixed(3)).join(","), lo=chunk.map(p=>p[1].toFixed(3)).join(",");
-      const q=`?latitude=${la}&longitude=${lo}&current=wind_speed_10m,wind_direction_10m&wind_speed_unit=ms&timezone=Asia%2FTokyo`;
-      let data; try{ data=await getJSON(OM_JMA+q); }catch(e){ data=await getJSON(OM_STD+q); }
+      const q=`?latitude=${la}&longitude=${lo}&current=wind_speed_10m,wind_direction_10m&wind_speed_unit=ms`;
+      let data;
+      try{ data=await getJSON(OM_JMA+q, 25000); }
+      catch(e1){ try{ data=await getJSON(OM_STD+q, 25000); }
+        catch(e2){ LAST_WIND_ERR=(e2&&e2.message)?e2.message:String(e2); throw e2; } }
       if(Array.isArray(data)) results.push(...data); else results.push(data);
     }
     const nlon=lons.length,nlat=lats.length;
@@ -232,11 +237,11 @@ async function fetchWindGrid(ext){
     results.forEach((res,n)=>{ const cur=(res&&res.current)||{}; const j=Math.floor(n/nlon), i=n%nlon;
       if(j<nlat&&i<nlon){ const sp=cur.wind_speed_10m, di=cur.wind_direction_10m;
         if(sp!=null){ spd[j][i]=sp; cnt++; const rad=di*Math.PI/180; U[j][i]=-sp*Math.sin(rad); V[j][i]=-sp*Math.cos(rad); } } });
-    if(!cnt) return null;
+    if(!cnt){ if(!LAST_WIND_ERR) LAST_WIND_ERR="応答に風データなし"; return null; }
     let sum=0,k=0; for(let j=0;j<nlat;j++)for(let i=0;i<nlon;i++) if(!isNaN(spd[j][i])){sum+=spd[j][i];k++;}
     const mean=k?sum/k:0; for(let j=0;j<nlat;j++)for(let i=0;i<nlon;i++) if(isNaN(spd[j][i])) spd[j][i]=mean;
     return {lons,lats,U,V,spd};
-  }catch(e){ console.warn("wind fetch failed",e); return null; }
+  }catch(e){ if(!LAST_WIND_ERR) LAST_WIND_ERR=(e&&e.message)?e.message:String(e); console.warn("wind fetch failed",e); return null; }
 }
 function synthWindGrid(ext,now){ const {lons,lats}=gridAxes(ext); const nlon=lons.length,nlat=lats.length;
   const a=now?windAnchors(now):null; const spd=[],U=[],V=[];
@@ -499,7 +504,7 @@ async function run(){
     setS("④ 海岸線を整形中…描画します","work");
     let coastline=null; try{ coastline=await coastP; }catch(e){ coastline=null; }
     draw(t, reportDt, coastline, grid, {hasTy});
-    const wtxt = realWind ? `実データ：最大${mx.toFixed(0)}・平均${av.toFixed(1)} m/s` : `簡易表示（風データ取得できず）：最大${mx.toFixed(0)} m/s`;
+    const wtxt = realWind ? `実データ：最大${mx.toFixed(0)}・平均${av.toFixed(1)} m/s` : `簡易表示（風取得失敗：${LAST_WIND_ERR||"不明"}）`;
     setS("✓ 作成完了（"+wtxt+"）。下の画像を確認し「画像を保存（PNG）」で保存できます。","ok");
     window.scrollTo({top: document.querySelector(".wrap").offsetTop-60, behavior:"smooth"});
   }catch(e){ setS("✕ エラー: "+(e&&e.message?e.message:e),"err"); }
